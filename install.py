@@ -19,7 +19,7 @@ print("""
 time.sleep(1)
 print("checking for not installed packages")
 #comment out if you are not using arch
-os.system("sudo pacman -Sy ollama kitty --noconfirm && yay -S cava freetube")
+os.system("sudo pacman -Sy ollama kitty sox --noconfirm && yay -S cava freetube")
 #os.system("sudo apt install cava ollama freetube kitty amixer")
 print("creating the myjarvis module")
 os.system("ollama create myjarvis -f jarvis.modelfile")

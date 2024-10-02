@@ -88,7 +88,7 @@ async def jarvis_listener():
     """
     Listens for user input, processes it, and provides spoken responses using edge_tts.
     """
-    model = WhisperModel("distil-small.en")
+    model = WhisperModel("distil-medium.en")
     
     cava_process = subprocess.Popen(['kitty', '--', 'cava'])
 

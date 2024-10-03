@@ -5,41 +5,56 @@ import os
 from faster_whisper import WhisperModel
 import edge_tts
 import time
-import sys
 import sounddevice as sd
 import numpy as np
 import tempfile
 import wave
 from colorama import Fore, Style
-import random
-
-music_list = ['https://www.youtube.com/watch?v=FFfdyV8gnWk', 'https://www.youtube.com/watch?v=6xhBTszRY8Q', 
-              'https://www.youtube.com/watch?v=H6ven_YN_nI', 'https://www.youtube.com/watch?v=1xcvWmN0Pe4']
-chosen_music = random.choice(music_list)
-
-terminal_width = os.get_terminal_size().columns
-line = '-' * terminal_width
 
 async def process_query(user_input):
     """
-    Processes user input and retrieves a response from Ollama using subprocess.run().
+    Processes user input, retrieves a response from Ollama, and appends the entire conversation to a permanent log.
     """
     try:
-        command = ['ollama', 'run', 'myjarvis', user_input]
+        # Read the entire conversation log
+        try:
+            with open('conversation_log.txt', 'r') as f:
+                context = f.read()
+        except FileNotFoundError:
+            context = ""
+
+        # Add the new user input to the context
+        context += f"User: {user_input}\n"
+
+        # Prepare the context for Ollama, making it clear that it should respond as Jarvis
+        jarvis_context = context + "You are Jarvis, the assistant. Respond as Jarvis, without prefixes like 'Jarvis:'.\n"
+
+        # Include the full conversation when sending to Ollama
+        command = ['ollama', 'run', 'myjarvis', jarvis_context + user_input]
         print(f"{Fore.RED} thinking...{Style.RESET_ALL}")
-        
+
         result = subprocess.run(command, capture_output=True, text=True)
 
         if result.returncode != 0:
             print(f"Error: {result.stderr.strip()}")
             return f"Error from Ollama: {result.stderr.strip()}"
-        
+
         response = result.stdout.strip()
+
+        # Add the new response to the context without 'Jarvis:' prefix
+        context += f"{response}\n"
+
+        # Append the new conversation (permanently) to the log file
+        with open('conversation_log.txt', 'a') as f:
+            f.write(f"User: {user_input}\n")
+            f.write(f"Jarvis: {response}\n")
+
         return response if response else "Please say something"
-    
+
     except Exception as e:
         print(f"Unexpected error: {e}")
         return f"An unexpected error occurred: {e}"
+
 
 async def speak(text):
     """
@@ -80,30 +95,17 @@ async def transcribe_audio(model, filename):
         result_text += segment.text  # Access the text attribute
     return result_text.strip().lower()
 
-async def play_music():
+async def play_music(query):
     """
-    Plays the chosen music in a subprocess.
+    Plays the chosen music using YouTube search.
     """
-    music_process = subprocess.Popen(['kitty', 'freetube', chosen_music])
-    return music_process
-
-async def stop_music_listener(music_process):
-    """
-    Listens for the command to stop the music and stops it.
-    """
-    model = WhisperModel("distil-small.en")
+    search_url = f"ytdl://ytsearch:the music {query}"
+    print(f"Playing music: {search_url}")
+    music_process = subprocess.Popen(['mpv', search_url])  # Ensure mpv is installed and available in PATH
     
-    while True:
-        audio, fs = await record_audio()
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
-            await save_wav(audio, fs, tmpfile.name)
-            text = await transcribe_audio(model, tmpfile.name)
-            os.remove(tmpfile.name)
-        
-        if "stop the music" in text:
-            music_process.terminate()
-            await speak("Music stopped.")
-            break
+    # Wait for the music process to finish (i.e., when the video is closed)
+    music_process.wait()
+    print("Music playback ended.")
 
 async def jarvis_listener():
     """
@@ -123,18 +125,24 @@ async def jarvis_listener():
                 text = await transcribe_audio(model, tmpfile.name)
                 os.remove(tmpfile.name)
 
-            print(f"{Fore.LIGHTYELLOW_EX}>>you have said:{Fore.BLUE} {text} {Style.RESET_ALL}")
+            print(f"{Fore.LIGHTYELLOW_EX}>> you have said: {Fore.BLUE} {text} {Style.RESET_ALL}")
 
             if "music" in text:
-                await speak("Playing music...")
-                music_process = await play_music()
-                await stop_music_listener(music_process)  # Listen for the stop command
+                await speak("What song do you want to play?")
+                audio, fs = await record_audio()  # Record the song name
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
+                    await save_wav(audio, fs, tmpfile.name)
+                    song_query = await transcribe_audio(model, tmpfile.name)
+                    os.remove(tmpfile.name)
+
+                if song_query:  # Ensure there's a valid query
+                    await play_music(song_query)  # Play the song
 
             if "stop" in text:
                 print("Stopping...")
                 await speak("Goodbye, sir.")
                 os.system("amixer set Master unmute")
-                cava_process.terminate()
+                cava_process.terminate()  # Stop Cava
                 break
 
             if "shut down" in text:
@@ -161,10 +169,7 @@ async def jarvis_listener():
                 await speak(f"Successfully installed {package_name}")
 
             response = await process_query(text)
-            print(f"{Fore.LIGHTYELLOW_EX} {line} {Style.RESET_ALL}")
-            print(f"{Fore.LIGHTYELLOW_EX}>>{Fore.GREEN} {response} {Style.RESET_ALL}")
-            print(f"{Fore.LIGHTYELLOW_EX} {line} {Style.RESET_ALL}")
-            
+            print(f"{Fore.LIGHTYELLOW_EX}>> {response} {Style.RESET_ALL}")
             await speak(response)
 
         except Exception as e:

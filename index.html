@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jarvis Assistant</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        
+        body {
+            background-color: #121212;
+            color: #e0e0e0;
+            font-family: Inter, Arial, sans-serif;
+            padding: 20px;
+        }
+        
+        
+        #chat {
+            
+            padding: 10px;
+            margin-top: 10px;
+            height: 400px;
+            overflow-y: auto;
+            
+            border-radius: 10px;
+        }
+        .user-message {
+            color: #f6a020;
+            margin: 5px 0;
+        }
+        .jarvis-message {
+            color: #29b6f6;
+            margin: 5px 0;
+        }
+        textarea {
+            width: calc(100% - 8px); /* Platz für den Button */
+            padding: 10px;
+            padding-top: 5px;
+            padding-left: 10px;
+            line-height: 40px;
+            border: none;
+            border-radius: 10px;
+            background-color: #2c2c2c;
+            color: #ffffff;
+            height: 40px; /* Gleiche Höhe wie der Button */
+            resize: none;
+            text-align:left;
+        }
+        button {
+            background-color: #d3d3d3; /* Leicht graue Farbe */
+            color: #ffffff;
+            border: none;
+            border-radius: 20%; /* Runder Button */
+            width: 40px;
+            height: 40px;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-left: -45px; /* Abstand zwischen Button und Textarea */
+            position: relative; /* Kein `absolute`, um auf gleicher Y-Position zu bleiben */
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #b0b0b0; /* Dunkleres Grau beim Hover */
+        }
+
+        #input-container {
+            display: flex;
+            align-items:center; /* Gleiche Y-Position */
+            margin-top: 20px;
+        }
+
+        /* Pfeil */
+        button::before {
+            content: '⬆'; /* Pfeil-Symbol */
+            font-size: 30px;
+            color: #2c2c2c; /* Passend zur Hintergrundfarbe */
+        }
+
+        .loading {
+            font: 10px;
+            text-align: left;
+            color: #29b6f6;
+        }
+        .loading:after {
+            content: ' .';
+            animation: dots 1s steps(5, end) infinite;
+        }
+        @keyframes dots {
+            0%, 20% {
+                color: rgba(0,0,0,0);
+                text-shadow:
+                .25em 0 0 rgba(0,0,0,0),
+                .5em 0 0 rgba(0,0,0,0);
+                font-size: 25px;
+            }
+            40% {
+                color: white;
+                text-shadow:
+                .25em 0 0 rgba(0,0,0,0),
+                .5em 0 0 rgba(0,0,0,0);
+                font-size: 25px;
+            }
+            60% {
+                text-shadow:
+                .25em 0 0 white,
+                .5em 0 0 rgba(0,0,0,0);
+                font-size: 25px;
+            }
+            80%, 100% {
+                text-shadow:
+                .25em 0 0 white,
+                .5em 0 0 white;
+                font-size: 25px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>Jarvis Assistant</h1>
+    <div id="chat"></div>
+    <div id="input-container">
+        
+        <textarea id="message" rows="1" placeholder="Type your message here..."></textarea>
+        <button onclick="sendMessage()"></button>
+    </div>
+
+    <script>
+        var messages = [];
+    
+        $(document).ready(function() {
+            fetchLastMessages();
+        });
+    
+        function fetchLastMessages() {
+            $.ajax({
+                type: "GET",
+                url: "/get_last_messages",
+                success: function(response) {
+                    messages = response;
+                    updateChat();
+                },
+                error: function(xhr, status, error) {
+                    console.error("Error fetching messages: ", error);
+                }
+            });
+        }
+    
+        function sendMessage() {
+            var message = $("#message").val();
+            if (!message) {
+                alert("Please enter a message!");
+                return;
+            }
+    
+            addMessage("You", message);
+            $("#message").val("");
+    
+            var loadingHtml = '<div class="loading">Thinking</div>';
+            $("#chat").append(loadingHtml);
+    
+            $.ajax({
+                type: "POST",
+                url: "/send_message",
+                contentType: "application/json",
+                data: JSON.stringify({ message: message }),
+                success: function(response) {
+                    $("#chat .loading").last().remove();
+                    addMessage("Jarvis", response.response);
+                },
+                error: function(xhr, status, error) {
+                    $("#chat .loading").last().remove();
+                    console.error("Error occurred: ", status, error);
+                    alert("Error: " + error);
+                }
+            });
+        }
+    
+        function addMessage(sender, text) {
+            messages.push({ sender: sender, text: text });
+            if (messages.length > 10) messages.shift();  // Keep only the last 5 pairs of messages
+    
+            updateChat();
+        }
+    
+        function updateChat() {
+            $("#chat").html("");  // Clear chat
+            messages.forEach(msg => {
+                var messageHtml = `<div class="${msg.sender.toLowerCase()}-message">${msg.sender}: ${msg.text}</div>`;
+                $("#chat").append(messageHtml);
+            });
+            $("#chat").scrollTop($("#chat")[0].scrollHeight);  // Scroll to bottom
+        }
+    </script>
+    
+    
+</body>
+</html>

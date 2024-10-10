@@ -1,7 +1,8 @@
+#!/bin/python
 import asyncio
 import subprocess
 import os
-import whisper  # OpenAI Whisper importieren
+from faster_whisper import WhisperModel
 import edge_tts
 import time
 import sounddevice as sd
@@ -9,77 +10,36 @@ import numpy as np
 import tempfile
 import wave
 from colorama import Fore, Style
-from langdetect import detect
 
 async def process_query(user_input):
     """
-    Processes user input, retrieves a response from Ollama, and appends the entire conversation to a permanent log.
+    Processes user input and retrieves a response from Ollama using subprocess.run().
     """
     try:
-        # Read the entire conversation log
-        try:
-            with open('conversation_log.txt', 'r') as f:
-                context = f.read()
-        except FileNotFoundError:
-            context = ""
-
-        # Add the new user input to the context
-        context += f"User: {user_input}\n"
-
-        # Prepare the context for Ollama, making it clear that it should respond as Jarvis
-        jarvis_context = context + "You are Jarvis, the assistant. Respond as Jarvis, without prefixes like 'Jarvis:'.\n"
-
-        # Include the full conversation when sending to Ollama
-        command = ['ollama', 'run', 'myjarvis', jarvis_context + user_input]
+        command = ['ollama', 'run', 'myjarvis', user_input]
         print(f"{Fore.RED} thinking...{Style.RESET_ALL}")
-
+        
         result = subprocess.run(command, capture_output=True, text=True)
 
         if result.returncode != 0:
             print(f"Error: {result.stderr.strip()}")
             return f"Error from Ollama: {result.stderr.strip()}"
-
+        
         response = result.stdout.strip()
-
-        # Add the new response to the context without 'Jarvis:' prefix
-        context += f"{response}\n"
-
-        # Append the new conversation (permanently) to the log file
-        with open('conversation_log.txt', 'a') as f:
-            f.write(f"User: {user_input}\n")
-            f.write(f"Jarvis: {response}\n")
-
         return response if response else "Please say something"
-
+    
     except Exception as e:
         print(f"Unexpected error: {e}")
         return f"An unexpected error occurred: {e}"
 
-
 async def speak(text):
     """
-    Speaks the given text using edge_tts with automatic language detection.
+    Speaks the given text using edge_tts.
     """
-    language_voice_map = {
-        "en": "en-US-JennyNeural",
-        "de": "de-DE-KatjaNeural",
-        "fr": "fr-FR-DeniseNeural",
-        # Füge weitere Sprachen und Stimmen hinzu
-    }
-
-    # Erkenne die Sprache
-    try:
-        detected_lang = detect(text)
-    except:
-        detected_lang = "en"  # Fallback auf Englisch, falls Erkennung fehlschlägt
-    
-    # Stimme basierend auf erkannter Sprache auswählen
-    voice = language_voice_map.get(detected_lang, "en-US-JennyNeural")
-    tts = edge_tts.Communicate(text=text, voice=voice)  
+    tts = edge_tts.Communicate(text=text, voice="en-AU-WilliamNeural")  
     await tts.save("temp.mp3")
     subprocess.call(["mpg123", "temp.mp3"])
     os.remove("temp.mp3")
-
 
 async def record_audio(duration=6, fs=44100):
     """
@@ -91,7 +51,6 @@ async def record_audio(duration=6, fs=44100):
     sd.wait() 
     return audio, fs
 
-
 async def save_wav(audio, fs, filename):
     """
     Saves the recorded audio to a WAV file.
@@ -102,20 +61,21 @@ async def save_wav(audio, fs, filename):
         wf.setframerate(fs)
         wf.writeframes(audio.tobytes())
 
-
 async def transcribe_audio(model, filename):
     """
-    Transcribes the audio using the OpenAI Whisper model.
+    Transcribes the audio using the Faster Whisper model.
     """
-    result = model.transcribe(filename)
-    return result['text'].strip().lower()
-
+    segments, info = model.transcribe(filename)
+    result_text = ""
+    for segment in segments:
+        result_text += segment.text  # Access the text attribute
+    return result_text.strip().lower()
 
 async def play_music(query):
     """
     Plays the chosen music using YouTube search.
     """
-    search_url = f"ytdl://ytsearch:the music {query}"
+    search_url = f"ytdl://ytsearch:{query}"
     print(f"Playing music: {search_url}")
     music_process = subprocess.Popen(['mpv', search_url])  # Ensure mpv is installed and available in PATH
     
@@ -123,12 +83,11 @@ async def play_music(query):
     music_process.wait()
     print("Music playback ended.")
 
-
 async def jarvis_listener():
     """
     Main listener function for Jarvis.
     """
-    model = whisper.load_model("base")  # OpenAI Whisper Modell laden
+    model = WhisperModel("distil-small.en")
     cava_process = subprocess.Popen(['kitty', '--', 'cava'])
 
     await speak("Booting up, sir.")
